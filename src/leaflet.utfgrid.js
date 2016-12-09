@@ -45,7 +45,11 @@ L.UtfGrid = (L.Layer || L.Class).extend({
 		pointerCursor: true,
 
 		maxRequests: 4,
-		requestTimeout: 60000
+		requestTimeout: 60000,
+
+		tms:false,
+		wrapCoords:false,
+		onlyKeys:false
 	},
 
 	//The thing the mouse is currently on
@@ -153,28 +157,38 @@ L.UtfGrid = (L.Layer || L.Class).extend({
 	},
 
 	_objectForEvent: function (e) {
+		var tms = this.options.tms;
+		var pixelMapHeight=this._map.options.crs.getSize(this._map.getZoom()).y;
 		var map = this._map,
 		    point = map.project(e.latlng),
 		    tileSize = this.options.tileSize,
 		    resolution = this.options.resolution,
 		    x = Math.floor(point.x / tileSize),
-		    y = Math.floor(point.y / tileSize),
+		    y = (tms ? Math.floor((pixelMapHeight - point.y) / tileSize) : Math.floor(point.y / tileSize)),
 		    gridX = Math.floor((point.x - (x * tileSize)) / resolution),
-		    gridY = Math.floor((point.y - (y * tileSize)) / resolution),
+		    gridY = (tms ? Math.floor(  (tileSize - ((pixelMapHeight - point.y) - (y * tileSize))) / resolution) :Math.floor((point.y - (y * tileSize)) / resolution)),
 			max = map.options.crs.scale(map.getZoom()) / tileSize;
-
-		x = (x + max) % max;
-		y = (y + max) % max;
+		if (this.options.wrapCoords) {
+			x = (x + max) % max;
+			y = (y + max) % max;
+		}
 
 		var data = this._cache[map.getZoom() + '_' + x + '_' + y];
 		var result = null;
 		if (data && data.grid) {
-			var idx = this._utfDecode(data.grid[gridY].charCodeAt(gridX)),
-				key = data.keys[idx];
+			//var idx = this._utfDecode(data.grid[gridY].charCodeAt(gridX)),
+			//key = data.keys[idx];
+               var key =null;
+               if (data && data.uniform) {
+                       key = data.uniform;
+               }
+               else if (data && data.grid) {
+                       var idx = this._utfDecode(data.grid[gridY].charCodeAt(gridX));
+                       key = data.keys[idx];                   
+               }
 
-			if (data.data.hasOwnProperty(key)) {
-				result = data.data[key];
-			}
+			   if (this.options.onlyKeys) {result=key;}
+				else if (data.data.hasOwnProperty(key)) {result = data.data[key];}
 		}
 
 		return L.extend({ latlng: e.latlng, data: result }, e);
@@ -192,12 +206,14 @@ L.UtfGrid = (L.Layer || L.Class).extend({
 			return;
 		}
 
+		var tms = this.options.tms;
+		var pixelMapHeight=this._map.options.crs.getSize(this._map.getZoom()).y;
 		var nwTilePoint = new L.Point(
 				Math.floor(bounds.min.x / tileSize),
-				Math.floor(bounds.min.y / tileSize)),
+				(tms ? Math.floor((pixelMapHeight - bounds.max.y) / tileSize) : Math.floor(bounds.min.y / tileSize))),
 			seTilePoint = new L.Point(
 				Math.floor(bounds.max.x / tileSize),
-				Math.floor(bounds.max.y / tileSize)),
+				(tms ? Math.floor((pixelMapHeight - bounds.min.y) / tileSize) :Math.floor(bounds.max.y / tileSize))),
 				max = this._map.options.crs.scale(zoom) / tileSize;
 
 		//Load all required ones
@@ -205,7 +221,7 @@ L.UtfGrid = (L.Layer || L.Class).extend({
 		for (var x = nwTilePoint.x; x <= seTilePoint.x; x++) {
 			for (var y = nwTilePoint.y; y <= seTilePoint.y; y++) {
 
-				var xw = (x + max) % max, yw = (y + max) % max;
+				var xw = (this.options.wrapCoords ? (x + max) % max : x), yw = (this.options.wrapCoords ? (y + max) % max : y);
 				var key = zoom + '_' + xw + '_' + yw;
 				visible_tiles.push(key);
 
